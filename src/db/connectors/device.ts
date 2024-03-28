@@ -104,7 +104,7 @@ async function getDevice({
     return { error };
   }
 
-  if (!data?.object) {
+  if (!data.object) {
     return { error: new errorCreator.DoesNotExist({ name: `device ${JSON.stringify(query, null, 4)}` }) };
   }
 

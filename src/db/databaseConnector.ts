@@ -1,5 +1,3 @@
-'use strict';
-
 import { ObjectId } from 'mongodb';
 import mongoose, { mongo, SortOrder } from 'mongoose';
 import { appConfig, dbConfig } from 'src/config/defaults/index.js';
@@ -8,7 +6,7 @@ import { UserSchema } from 'src/db/connectors/user.js';
 import errorCreator from 'src/error/errorCreator.js';
 import { ChildError } from 'src/error/GeneralError.js';
 
-const dbPath = `mongodb://${appConfig.dbHost}:${appConfig.dbPort}/${appConfig.dbName}`;
+const dbPath = `mongodb://${appConfig.dbHost ?? ''}:${appConfig.dbPort?.toString() ?? ''}/${appConfig.dbName ?? ''}`;
 
 export type BaseSchema = {
   _id: ObjectId;
@@ -128,9 +126,7 @@ export const coordinatesSchemaDef: mongoose.SchemaDefinition<CoordinatesSchema> 
 
 export type CustomFieldSchema = {
   name: string;
-  value: {
-    [key: string]: unknown
-  };
+  value: Record<string, unknown>;
 };
 
 export const customFieldSchemaDef: mongoose.SchemaDefinition<CustomFieldSchema> = {
@@ -155,13 +151,19 @@ function modifyObject<T>({
     password?: string | boolean
   };
 }) {
+  const password = (() => {
+    if (noClean) {
+      return object.password;
+    }
+
+    return typeof object.password === 'string';
+  })();
+
   return {
     ...object,
-    objectId: object._id?.toString(),
+    objectId: object._id.toString(),
     ...(object.password && {
-      password: !noClean
-        ? typeof object.password === 'string'
-        : object.password
+      password,
     }),
   };
 }
@@ -176,8 +178,8 @@ async function saveObject<T>({
   objectType: string;
 }) {
   const now = new Date();
-  object.schema.obj.lastUpdated = object.schema.obj.lastUpdated || now;
-  object.schema.obj.timeCreated = object.schema.obj.timeCreated || now;
+  object.schema.obj.lastUpdated = object.schema.obj.lastUpdated ?? now;
+  object.schema.obj.timeCreated = object.schema.obj.timeCreated ?? now;
 
   try {
     const createdObject = await object.create(objectData);
@@ -192,7 +194,7 @@ async function saveObject<T>({
     return {
       error: new errorCreator.Database({
         errorObject: error,
-        name: `saveObject ${objectType} ${object}`,
+        name: `saveObject ${objectType} ${object.name}`,
       }),
     };
   }
@@ -354,7 +356,7 @@ async function getObjects<T>({
   sort?: string | {
     [key in keyof T & BaseSchema]: SortOrder
   };
-  query: mongoose.FilterQuery<T & Partial<BaseSchema>>;
+  query: mongoose.FilterQuery<Partial<T & BaseSchema>>;
   filter?: mongoose.ProjectionType<T & BaseSchema>;
 }): Promise<{
   data?: {
@@ -363,10 +365,13 @@ async function getObjects<T>({
   error?: ChildError,
 }> {
   try {
-    const result = sort
-      ? await object.find<T & BaseSchema>(query, filter)
-        .sort(sort)
-      : await object.find<T & BaseSchema>(query, filter);
+    let result;
+
+    if (sort) {
+      result = await object.find<T & BaseSchema>(query, filter).sort(sort);
+    } else {
+      result = await object.find<T & BaseSchema>(query, filter);
+    }
 
     return { data: { objects: result.map((foundObject) => modifyObject({ object: foundObject })) } };
   } catch (error) {
@@ -389,7 +394,7 @@ async function updateObject<T>({
 }: {
   object: mongoose.Model<T & BaseSchema>;
   update: mongoose.UpdateQuery<T & BaseSchema>;
-  query: mongoose.FilterQuery<T & BaseSchema>;
+  query: mongoose.FilterQuery<Partial<T & BaseSchema>>;
   suppressError?: boolean;
   options?: mongoose.QueryOptions;
   errorNameContent?: string;
@@ -459,9 +464,9 @@ async function updateObjects<T>({
       data: updatedData = { objects: [] },
     } = await getObjects({
       object,
-      query: { 
+      query: {
         lastUpdated: now,
-      },
+      } as typeof query,
     });
 
     if (errorGet) {
@@ -494,7 +499,7 @@ async function removeObject<T>({
   const options: mongoose.QueryOptions = { justOne: true };
 
   try {
-    object.findOneAndDelete(query, options);
+    await object.findOneAndDelete(query, options);
 
     return { data: { success: true } };
   } catch (error) {
@@ -550,7 +555,7 @@ async function addObjectAccess<T>({
   teamAdminIds?: BaseSchema['teamAdminIds'];
   userAdminIds?: BaseSchema['userAdminIds'];
 }): Promise<{ data?: { object: T & BaseSchema }, error?: ChildError }> {
-  if (!userIds && !teamIds && !bannedIds && !teamAdminIds && !userAdminIds) {
+  if (![userIds, teamIds, bannedIds, teamAdminIds, userAdminIds].some((ids) => !!ids)) {
     return { error: new errorCreator.InvalidData({ expected: 'teamIds || userIds || bannedIds || userAdminIds || teamAdminIds' }) };
   }
 
@@ -560,7 +565,7 @@ async function addObjectAccess<T>({
       userAdminIds: { $each: bannedIds },
       userIds: { $each: bannedIds },
       teamIds: { $each: bannedIds },
-    }))
+    })),
   };
   const addToSet = {
     ...(teamIds && { teamIds: { $each: teamIds } }),
@@ -571,12 +576,12 @@ async function addObjectAccess<T>({
   };
 
   return updateObject({
+    object,
     update: {
       ...(Object.keys(pull).length > 0 && { $pull: pull }),
       ...(Object.keys(addToSet).length > 0 && { $addToSet: addToSet }),
     },
-    object,
-    query: { _id: new ObjectId(objectId) },
+    query: { _id: new ObjectId(objectId) } as mongoose.FilterQuery<Partial<T & BaseSchema>>,
   });
 }
 
@@ -597,7 +602,7 @@ async function removeObjectAccess<T>({
   teamAdminIds?: BaseSchema['teamAdminIds'];
   userAdminIds?: BaseSchema['userAdminIds'];
 }): Promise<{ data?: { object: T & BaseSchema }, error?: ChildError }> {
-  if (!userIds && !teamIds && !bannedIds && !teamAdminIds && !userAdminIds) {
+  if (![userIds, teamIds, bannedIds, teamAdminIds, userAdminIds].some((ids) => !!ids)) {
     return { error: new errorCreator.InvalidData({ expected: 'teamIds || userIds || bannedIds || userAdminIds || teamAdminIds' }) };
   }
 
@@ -610,11 +615,11 @@ async function removeObjectAccess<T>({
   };
 
   return updateObject({
+    object,
     update: {
       ...(Object.keys(pull).length > 0 && { $pull: pull }),
     },
-    object,
-    query: { _id: objectId },
+    query: { _id: objectId } as mongoose.FilterQuery<Partial<T & BaseSchema>>,
   });
 }
 
@@ -668,9 +673,11 @@ async function updateAccess<T>(params: {
     return { data: { object: data?.object } };
   };
 
-  return callback(shouldRemove
-    ? await removeObjectAccess(accessParams)
-    : await addObjectAccess(accessParams));
+  if (shouldRemove) {
+    return callback(await removeObjectAccess(accessParams));
+  }
+
+  return callback(await addObjectAccess(accessParams));
 }
 
 export default {

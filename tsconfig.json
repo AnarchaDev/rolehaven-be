@@ -1,20 +1,8 @@
 {
   "extends": "@tsconfig/node21/tsconfig.json",
   "compilerOptions": {
-    "strict": true,
-    "forceConsistentCasingInFileNames": true,
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
     "noEmit": true,
-    "resolveJsonModule": true,
-    "removeComments": true,
-    "strictNullChecks": true,
-    "strictFunctionTypes": true,
-    "isolatedModules": true,
     "incremental": true,
-    "skipLibCheck": true,
-    "allowUnreachableCode": false,
-    "allowJs": true,
     "paths": {
       "src/*": [
         "./src/*"
@@ -25,7 +13,6 @@
     "./node_modules",
     "./dist",
     "./docs",
-    "./bbrdocs",
-    "**/*.js"
+    "./bbrdocs"
   ]
 }
