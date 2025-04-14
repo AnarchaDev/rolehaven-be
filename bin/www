@@ -18,7 +18,7 @@ function run() {
   // SocketIO
   const { io } = app;
 
-  io.attach(server);
+  io.attach(server, { maxHttpBufferSize: 104857600 });
 }
 
 run();
